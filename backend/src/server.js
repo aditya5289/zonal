@@ -146,8 +146,33 @@ app.get('/api/health', async (_req, res) => {
   } catch {
     db = 'down';
   }
-  res.json({ status: 'ok', db, env: env.nodeEnv, time: new Date().toISOString() });
+  // Report which commit is actually serving. Without this there is no way to
+  // tell a deploy that failed from one that silently redeployed an old commit,
+  // which is exactly how a fix can appear to have no effect.
+  const commit = (
+    process.env.RAILWAY_GIT_COMMIT_SHA ??
+    process.env.GIT_COMMIT ??
+    ''
+  ).slice(0, 7);
+
+  res.json({
+    status: 'ok',
+    db,
+    env: env.nodeEnv,
+    commit: commit || 'unknown',
+    seeded: await isSeeded(),
+    time: new Date().toISOString(),
+  });
 });
+
+/** Cheap check for whether the production seed has ever run. */
+async function isSeeded() {
+  try {
+    return (await prisma.zone.count()) > 0;
+  } catch {
+    return false;
+  }
+}
 
 app.use('/api/auth', authRouter);
 app.use('/api/zones', zoneRouter);

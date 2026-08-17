@@ -45,6 +45,10 @@ check('API responds', health.ok, `status=${health.body.status}`);
 check('database connected', health.body.db === 'up');
 check('running in production mode', health.body.env === 'production', health.body.env);
 
+// Which commit answered? 'unknown' means the running code predates this field,
+// which is itself the answer: the platform is serving a stale deploy.
+console.log(`        deployed commit: ${health.body.commit ?? 'not reported (old build)'}`);
+
 // --- has the schema been created? ------------------------------------------
 const zones = await api('/zones');
 check('schema exists (zones table readable)', zones.ok, zones.body.error ?? '');
