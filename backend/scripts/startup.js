@@ -12,11 +12,17 @@
 import { spawn } from 'node:child_process';
 
 const line = (s = '') => console.log(s);
-const step = (n, what) => line(`\n[${n}/3] ${what}`);
+const totalSteps =
+  process.env.SEED_ADMIN_EMAIL && process.env.SEED_ADMIN_PASSWORD ? 4 : 3;
+const step = (n, what) => line(`\n[${n}/${totalSteps}] ${what}`);
 
-function run(command, args) {
+function run(command, args, extraEnv = {}) {
   return new Promise((resolve) => {
-    const child = spawn(command, args, { stdio: 'inherit', shell: process.platform === 'win32' });
+    const child = spawn(command, args, {
+      stdio: 'inherit',
+      shell: process.platform === 'win32',
+      env: { ...process.env, ...extraEnv },
+    });
     child.on('close', (code) => resolve(code ?? 1));
     child.on('error', (err) => {
       line(`  could not run ${command}: ${err.message}`);
@@ -90,6 +96,31 @@ if (migrateCode !== 0) {
   line('\n  Migration failed - see the Prisma output above.');
   line('  The server will not start against an unmigrated database.\n');
   process.exit(1);
+}
+
+// --- 4. first-run seed, if asked for ---------------------------------------
+//
+// Railway has no shell, so there is nowhere to run `npm run seed:prod` by hand.
+// Setting SEED_ADMIN_EMAIL and SEED_ADMIN_PASSWORD makes the deploy seed itself
+// once. The seed skips anything that already exists, so leaving the variables
+// in place is harmless - but delete them afterwards so the password is not
+// sitting in the dashboard.
+
+if (process.env.SEED_ADMIN_EMAIL && process.env.SEED_ADMIN_PASSWORD) {
+  step(4, 'Seeding');
+
+  const seedCode = await run('node', ['prisma/seed-production.js'], {
+    ADMIN_EMAIL: process.env.SEED_ADMIN_EMAIL,
+    ADMIN_PASSWORD: process.env.SEED_ADMIN_PASSWORD,
+  });
+
+  if (seedCode !== 0) {
+    line('\n  Seed failed - see the output above.');
+    line('  The server will still start; fix the variables and redeploy.');
+  } else {
+    line('\n  Seeded. Now REMOVE SEED_ADMIN_EMAIL and SEED_ADMIN_PASSWORD');
+    line('  from the dashboard so the password is not stored there.');
+  }
 }
 
 line('\n-------------------------------------------------');
