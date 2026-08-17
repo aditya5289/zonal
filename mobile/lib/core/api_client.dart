@@ -90,10 +90,18 @@ class ApiClient {
     try {
       return await run();
     } on SocketException {
+      // Always name the address that failed. Without it this message sent
+      // people hunting for a USB problem while the app was quietly pointed at
+      // a stale server saved during an earlier session.
+      final url = AppConfig.baseUrl;
+      final local = url.contains('localhost') || url.contains('127.0.0.1');
+
       throw ApiException(
         0,
-        'Cannot reach the server.\n\nIf you are on a physical phone over USB, run:\n'
-        'adb reverse tcp:4000 tcp:4000',
+        'Cannot reach the server at\n$url\n\n${local ? 'That is this phone itself. Tap the server address below '
+                'and enter the real one, or run:\n'
+                'adb reverse tcp:4000 tcp:4000' : 'Tap the server address below to change it, or check '
+                'that you have internet.'}',
       );
     } on HttpException {
       throw ApiException(0, 'Network error. Check that the backend is running.');

@@ -47,11 +47,22 @@ class AppConfig {
     var url = raw.trim();
     if (url.isEmpty) return _baseUrl;
 
-    // Accept "172.16.3.36" or "172.16.3.36:4000" as well as a full URL.
-    if (!url.startsWith('http://') && !url.startsWith('https://')) {
-      url = 'http://$url';
+    // Accept a bare address as well as a full URL, but guess the scheme from
+    // what was typed. "172.16.3.36" is a dev laptop and wants http://...:4000;
+    // "zonal-production.up.railway.app" is a hosted deployment and wants
+    // https:// on the default port. Appending :4000 to everything - as this
+    // once did - turns a working hosted address into an unreachable one.
+    final hasScheme = url.startsWith('http://') || url.startsWith('https://');
+    final looksLocal =
+        RegExp(r'^(\d{1,3}\.){3}\d{1,3}(:\d+)?$').hasMatch(url) ||
+        url.startsWith('localhost');
+
+    if (!hasScheme) url = looksLocal ? 'http://$url' : 'https://$url';
+
+    // Only plain HTTP gets the development port filled in; HTTPS keeps 443.
+    if (url.startsWith('http://') && !RegExp(r':\d+$').hasMatch(url)) {
+      url = '$url:4000';
     }
-    if (!RegExp(r':\d+$').hasMatch(url)) url = '$url:4000';
     url = url.replaceAll(RegExp(r'/+$'), '');
 
     _baseUrl = url;
