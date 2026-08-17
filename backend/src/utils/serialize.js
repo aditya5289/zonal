@@ -1,5 +1,41 @@
 /** Shared shapes so every endpoint returns a complaint the same way. */
 
+import { signMediaUrls } from '../lib/storage.js';
+
+/**
+ * Replace stored media keys with URLs the app can actually load.
+ *
+ * Done in one pass over the whole response rather than per complaint: a list
+ * of twenty complaints would otherwise mean twenty round trips to sign twenty
+ * URLs. Signed links expire, which is why only the bare key is ever persisted.
+ *
+ * @param {object|object[]} payload serialized complaint(s)
+ */
+export async function withMediaUrls(payload) {
+  const list = Array.isArray(payload) ? payload : [payload];
+
+  const keys = [];
+  for (const c of list) {
+    if (!c) continue;
+    for (const m of [...(c.beforeMedia ?? []), ...(c.afterMedia ?? [])]) {
+      if (m?.url) keys.push(m.url);
+    }
+  }
+
+  if (keys.length === 0) return payload;
+
+  const signed = await signMediaUrls(keys);
+
+  for (const c of list) {
+    if (!c) continue;
+    for (const m of [...(c.beforeMedia ?? []), ...(c.afterMedia ?? [])]) {
+      if (m?.url && signed.has(m.url)) m.url = signed.get(m.url);
+    }
+  }
+
+  return payload;
+}
+
 export const complaintInclude = {
   zone: { select: { id: true, code: true, name: true, label: true, colorHex: true } },
   lendingZone: { select: { id: true, code: true, name: true } },

@@ -82,6 +82,24 @@ export const env = {
   },
 
   uploadDir: process.env.UPLOAD_DIR ?? 'uploads',
+
+  /// Where complaint media lives.
+  ///
+  /// `local` writes to disk - correct for development and for a real server
+  /// with a real disk. `supabase` uses object storage, which is what any
+  /// container platform needs: their filesystems are wiped on every deploy,
+  /// so disk uploads disappear without warning.
+  storage: {
+    driver: (process.env.STORAGE_DRIVER ?? 'local').toLowerCase(),
+    supabaseUrl: process.env.SUPABASE_URL ?? '',
+    /// The service key. Server-side only - it bypasses row-level security and
+    /// must never reach the app or a browser.
+    supabaseSecretKey: process.env.SUPABASE_SECRET_KEY ?? '',
+    bucket: process.env.SUPABASE_BUCKET ?? 'complaint-media',
+    /// How long a signed media link stays valid. Long enough to open a
+    /// complaint and scroll its photos, short enough that a copied link dies.
+    signedUrlSeconds: num('SIGNED_URL_SECONDS', 3600),
+  },
   maxPhotoMb: num('MAX_PHOTO_MB', 10),
   maxVideoMb: num('MAX_VIDEO_MB', 25),
   maxAudioMb: num('MAX_AUDIO_MB', 5),
@@ -149,6 +167,20 @@ export function assertProductionReady() {
   }
   if (!env.publicUrl) {
     problems.push('PUBLIC_URL is not set (used to build media links).');
+  }
+
+  if (env.storage.driver === 'supabase') {
+    if (!env.storage.supabaseUrl) problems.push('SUPABASE_URL is not set.');
+    if (!env.storage.supabaseSecretKey) problems.push('SUPABASE_SECRET_KEY is not set.');
+  } else {
+    // Not fatal - a server with a real disk is a legitimate setup - but on a
+    // container platform this is how months of evidence silently disappear.
+    console.warn(
+      '\nWARNING: STORAGE_DRIVER is "local". Uploaded photos are written to ' +
+        'the container filesystem.\nOn Railway, Render, Fly or similar they ' +
+        'will be DELETED on the next deploy.\nSet STORAGE_DRIVER=supabase, or ' +
+        'attach a persistent volume.\n',
+    );
   }
 
   if (problems.length) {

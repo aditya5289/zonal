@@ -1,5 +1,4 @@
-import fs from 'node:fs';
-import { Router } from 'express';
+﻿import { Router } from 'express';
 import { z } from 'zod';
 import { prisma } from '../lib/prisma.js';
 import { env } from '../config/env.js';
@@ -7,11 +6,11 @@ import { ApiError, asyncHandler } from '../middleware/error.js';
 import { authenticate } from '../middleware/auth.js';
 import {
   uploadMedia,
-  publicUrlFor,
   mediaTypeFor,
   assertWithinTypeLimit,
   assertWithinDurationLimit,
 } from '../middleware/upload.js';
+import { putMedia, removeMedia } from '../lib/storage.js';
 import { detectZone, haversineMeters } from '../utils/geo.js';
 import { transition, notify, notifyMany, generateRef } from '../services/workflow.js';
 import { releaseWorker, broadcastEmergency } from '../services/allocation.js';
@@ -63,8 +62,17 @@ const createSchema = z.object({
   mediaMeta: z.string().optional(),
 });
 
-const cleanUpFiles = (files = []) => {
-  for (const f of files) fs.unlink(f.path, () => {});
+/**
+ * Uploads are held in memory until the storage layer accepts them, so a
+ * request that fails validation leaves nothing behind and needs no cleanup.
+ *
+ * What DOES need cleaning up is anything already handed to storage before a
+ * later step failed - those objects are real and would otherwise be orphaned.
+ */
+const cleanUpFiles = () => {};
+
+const discardStored = async (prepared = []) => {
+  await Promise.all(prepared.map((p) => removeMedia(p.url)));
 };
 
 /**
@@ -155,7 +163,7 @@ router.post(
         assertWithinDurationLimit(type, m.durationSec);
 
         prepared.push({
-          url: publicUrlFor(file.filename),
+          url: await putMedia(file),
           type,
           phase: 'BEFORE',
           mimeType: file.mimetype,
@@ -169,14 +177,15 @@ router.post(
         });
       }
     } catch (err) {
-      cleanUpFiles(files);
+      // Some files may already be in storage - remove them rather than leak.
+      await discardStored(prepared);
       throw err;
     }
 
     // Resolve the zone: the resident's override wins, otherwise point-in-polygon.
     const zones = await prisma.zone.findMany({ orderBy: { code: 'asc' } });
     if (!zones.length) {
-      cleanUpFiles(files);
+      await discardStored(prepared);
       throw new ApiError(500, 'No zones configured - run the seed');
     }
 
@@ -184,7 +193,7 @@ router.post(
     try {
       detected = detectZone(lat, lng, zones);
     } catch (err) {
-      cleanUpFiles(files);
+      await discardStored(prepared);
       if (err.code === 'NO_ZONES_CONFIGURED') {
         throw new ApiError(
           503,
@@ -273,7 +282,7 @@ router.post(
       return res.status(201).json({
         complaint: serializeComplaint(full),
         message:
-          `Emergency reported. ${notified.total} people alerted — ` +
+          `Emergency reported. ${notified.total} people alerted â€” ` +
           `${notified.officers} officers, ${notified.workers} on-duty workers, ` +
           `${notified.residents} residents.`,
       });
@@ -309,7 +318,7 @@ router.post(
         userId: zoneWithOfficer?.officerId,
         complaintId: complaint.id,
         title: `New complaint in ${zone.name}`,
-        body: `${ref} at ${landmark.name}. Awaiting verification — you can verify it yourself.`,
+        body: `${ref} at ${landmark.name}. Awaiting verification â€” you can verify it yourself.`,
       },
     ]);
 
@@ -561,3 +570,4 @@ router.post(
 );
 
 export { router as complaintRouter };
+

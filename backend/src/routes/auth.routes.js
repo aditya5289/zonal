@@ -1,10 +1,11 @@
-import { Router } from 'express';
+﻿import { Router } from 'express';
 import bcrypt from 'bcryptjs';
 import { z } from 'zod';
 import { prisma } from '../lib/prisma.js';
 import { ApiError, asyncHandler } from '../middleware/error.js';
 import { authenticate, signToken } from '../middleware/auth.js';
-import { uploadMedia, publicUrlFor } from '../middleware/upload.js';
+import { uploadMedia } from '../middleware/upload.js';
+import { putMedia } from '../lib/storage.js';
 
 const router = Router();
 
@@ -106,7 +107,7 @@ router.post(
               workerProfile: {
                 create: {
                   zoneId: zone.id,
-                  idProofUrl: req.file ? publicUrlFor(req.file.filename) : null,
+                  idProofUrl: req.file ? await putMedia(req.file) : null,
                   approvalStatus: 'PENDING',
                 },
               },
@@ -182,3 +183,4 @@ router.get(
 );
 
 export { router as authRouter, publicUser };
+

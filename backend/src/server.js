@@ -10,6 +10,7 @@ import { env, assertProductionReady } from './config/env.js';
 import { prisma } from './lib/prisma.js';
 import { notFound, errorHandler, asyncHandler } from './middleware/error.js';
 import { authenticate, requireRole } from './middleware/auth.js';
+import { signMediaInResponses } from './middleware/mediaUrls.js';
 
 import { authRouter } from './routes/auth.routes.js';
 import { zoneRouter } from './routes/zone.routes.js';
@@ -107,6 +108,10 @@ const apiLimiter = makeLimiter({
 
 // Order matters: the general limiter first so every request is counted, then
 // the tighter ones on the routes that need them.
+// Stored media keys become loadable URLs on the way out. One place, so a new
+// endpoint cannot forget to do it.
+app.use('/api', signMediaInResponses);
+
 app.use('/api', apiLimiter);
 app.use('/api/auth/login', authLimiter);
 app.use('/api/auth/register', authLimiter);

@@ -51,13 +51,15 @@ const EXT_TO_TYPE = {
 export const mediaTypeFor = (mimeType, originalName = '') =>
   MIME_TO_TYPE[mimeType] ?? EXT_TO_TYPE[path.extname(originalName).toLowerCase()] ?? null;
 
-const storage = multer.diskStorage({
-  destination: (_req, _file, cb) => cb(null, UPLOAD_ROOT),
-  filename: (_req, file, cb) => {
-    const ext = path.extname(file.originalname) || '';
-    cb(null, `${Date.now()}-${crypto.randomBytes(6).toString('hex')}${ext}`);
-  },
-});
+/**
+ * Files are held in memory, not written straight to disk.
+ *
+ * The storage layer decides where they end up - local disk or object storage -
+ * and that decision cannot be made by multer, which only knows about
+ * filesystems. Memory is safe here because the per-file ceiling is small; a
+ * 25 MB video is the largest thing that can arrive.
+ */
+const storage = multer.memoryStorage();
 
 // Multer enforces a single ceiling, so we take the largest allowed type here
 // and check the per-type limit ourselves once we know what was uploaded.
@@ -80,14 +82,15 @@ export const uploadMedia = multer({
   },
 });
 
-/** Per-type size ceilings, checked after multer has written the file. */
+/** Per-type size ceilings, checked once the type is known. */
 export function assertWithinTypeLimit(file) {
   const type = mediaTypeFor(file.mimetype, file.originalname);
   const capMb =
     type === 'PHOTO' ? env.maxPhotoMb : type === 'VIDEO' ? env.maxVideoMb : env.maxAudioMb;
 
+  // Nothing to clean up on rejection: the file is still in memory and is
+  // never written anywhere until the storage layer accepts it.
   if (file.size > capMb * 1024 * 1024) {
-    fs.unlink(file.path, () => {});
     throw new ApiError(400, `${type} files must be under ${capMb} MB`);
   }
   return type;
@@ -102,4 +105,5 @@ export function assertWithinDurationLimit(type, durationSec) {
   }
 }
 
-export const publicUrlFor = (filename) => `/uploads/${filename}`;
+// Where a file ends up is the storage layer's decision now - see
+// `putMedia` in lib/storage.js. It returns the key to persist on the Media row.

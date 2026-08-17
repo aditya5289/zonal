@@ -1,15 +1,14 @@
-import fs from 'node:fs';
-import { Router } from 'express';
+﻿import { Router } from 'express';
 import { z } from 'zod';
 import { prisma } from '../lib/prisma.js';
 import { ApiError, asyncHandler } from '../middleware/error.js';
 import { authenticate, requireRole, requireApprovedWorker } from '../middleware/auth.js';
 import {
   uploadMedia,
-  publicUrlFor,
   assertWithinTypeLimit,
   assertWithinDurationLimit,
 } from '../middleware/upload.js';
+import { putMedia, removeMedia } from '../lib/storage.js';
 import { transition, notify, notifyMany } from '../services/workflow.js';
 import { releaseWorker } from '../services/allocation.js';
 import {
@@ -170,7 +169,9 @@ router.post(
   uploadMedia.array('media', 5),
   asyncHandler(async (req, res) => {
     const files = req.files ?? [];
-    const cleanUp = () => files.forEach((f) => fs.unlink(f.path, () => {}));
+    // Files sit in memory until storage accepts them, so a failed request has
+    // nothing on disk to remove. Anything already stored is cleaned separately.
+    const cleanUp = () => {};
 
     let complaint;
     try {
@@ -208,7 +209,7 @@ router.post(
 
         prepared.push({
           complaintId: complaint.id,
-          url: publicUrlFor(file.filename),
+          url: await putMedia(file),
           type,
           phase: 'AFTER',
           mimeType: file.mimetype,
@@ -221,7 +222,8 @@ router.post(
         });
       }
     } catch (err) {
-      cleanUp();
+      // Some proof photos may already be stored - remove them rather than leak.
+      await Promise.all(prepared.map((p) => removeMedia(p.url)));
       throw err;
     }
 
@@ -302,3 +304,5 @@ router.post(
 );
 
 export { router as workerRouter };
+
+
