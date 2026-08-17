@@ -54,8 +54,12 @@ const LANDMARKS = [
 ];
 
 async function main() {
-  const email = process.env.ADMIN_EMAIL;
-  const password = process.env.ADMIN_PASSWORD;
+  // Trim and lower-case: a dashboard variable pasted with a trailing space, or
+  // typed with a capital, would otherwise create an account nobody can log
+  // into - and the failure reads as a wrong password rather than a wrong
+  // address.
+  const email = process.env.ADMIN_EMAIL?.trim().toLowerCase();
+  const password = process.env.ADMIN_PASSWORD?.trim();
 
   if (!email || !password) {
     console.error(
@@ -109,9 +113,30 @@ async function main() {
   console.log(`  landmarks  ${lmCreated} created, ${LANDMARKS.length - lmCreated} already existed`);
 
   // --- the one admin -----------------------------------------------------
-  const existingAdmin = await prisma.user.findUnique({ where: { email } });
-  if (existingAdmin) {
+  //
+  // Matched case-insensitively so an account stored with capitals is found
+  // rather than duplicated.
+  const existingAdmin = await prisma.user.findFirst({
+    where: { email: { equals: email, mode: 'insensitive' } },
+  });
+
+  if (existingAdmin && process.env.SEED_ADMIN_RESET === 'true') {
+    // Escape hatch for the case this script itself can create: an admin whose
+    // stored hash came from a value that is not what the operator believes
+    // they set - a pasted trailing space, a stray capital. Without this the
+    // account is unreachable and the only cure is dropping the database.
+    await prisma.user.update({
+      where: { id: existingAdmin.id },
+      data: {
+        email,
+        passwordHash: await bcrypt.hash(password, 12),
+        isActive: true,
+      },
+    });
+    console.log(`  admin      ${email} password RESET`);
+  } else if (existingAdmin) {
     console.log(`  admin      ${email} already exists — not modified`);
+    console.log('             (set SEED_ADMIN_RESET=true to reset its password)');
   } else {
     await prisma.user.create({
       data: {

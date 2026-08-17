@@ -51,9 +51,24 @@ function publicUser(user) {
   };
 }
 
+/**
+ * Email as typed is not email as stored.
+ *
+ * Postgres compares strings case-sensitively, so an account created as
+ * `Admin@mmmut.ac.in` could never be logged into by typing
+ * `admin@mmmut.ac.in`, and a value pasted with a trailing space matches
+ * nothing at all. Both come out as "Incorrect email or password", which sends
+ * people looking for a wrong password that was never wrong.
+ */
+const emailField = z
+  .string()
+  .trim()
+  .toLowerCase()
+  .pipe(z.string().email());
+
 const registerSchema = z.object({
   name: z.string().min(2, 'Name is too short'),
-  email: z.string().email(),
+  email: emailField,
   phone: z.string().min(10).max(15).optional(),
   password: z.string().min(6, 'Password must be at least 6 characters'),
   role: z.enum(['RESIDENT', 'WORKER']).default('RESIDENT'),
@@ -81,7 +96,12 @@ router.post(
     const { name, email, phone, password, role, zoneCode } = parsed.data;
 
     const existing = await prisma.user.findFirst({
-      where: { OR: [{ email }, ...(phone ? [{ phone }] : [])] },
+      where: {
+        OR: [
+          { email: { equals: email, mode: 'insensitive' } },
+          ...(phone ? [{ phone }] : []),
+        ],
+      },
     });
     if (existing) throw new ApiError(409, 'An account with that email or phone already exists');
 
@@ -147,14 +167,18 @@ router.post(
   '/login',
   asyncHandler(async (req, res) => {
     const schema = z.object({
-      email: z.string().email(),
+      email: emailField,
       password: z.string().min(1),
     });
     const parsed = schema.safeParse(req.body);
     if (!parsed.success) throw new ApiError(400, 'Email and password are required');
 
-    const user = await prisma.user.findUnique({
-      where: { email: parsed.data.email },
+    // Case-insensitive match rather than an exact one. Normalising the input
+    // is not enough on its own: accounts created before that normalisation
+    // existed may be stored with capitals, and their owners would be locked
+    // out permanently.
+    const user = await prisma.user.findFirst({
+      where: { email: { equals: parsed.data.email, mode: 'insensitive' } },
       include: { workerProfile: { include: { zone: true } }, zoneOwned: true },
     });
 
