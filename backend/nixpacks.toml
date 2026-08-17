@@ -1,0 +1,8 @@
+# Forces the Node version for the Railway build.
+#
+# The `engines` field in package.json was not being honoured - the build kept
+# selecting Node 18, which is too old for express-rate-limit v8 and causes the
+# server to die before it logs anything.
+
+[phases.setup]
+nixPkgs = ["nodejs_22", "npm-10_x", "openssl"]
