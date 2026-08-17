@@ -1,0 +1,373 @@
+import 'dart:io';
+
+import 'package:flutter/material.dart';
+import 'package:image_picker/image_picker.dart';
+import 'package:provider/provider.dart';
+
+import '../../core/api_client.dart';
+import '../../core/models.dart';
+import '../../core/palette.dart';
+import '../../core/session.dart';
+import '../../core/theme.dart';
+import '../../shared/ui.dart';
+
+class RegisterScreen extends StatefulWidget {
+  const RegisterScreen({super.key});
+
+  @override
+  State<RegisterScreen> createState() => _RegisterScreenState();
+}
+
+class _RegisterScreenState extends State<RegisterScreen> {
+  final _formKey = GlobalKey<FormState>();
+  final _name = TextEditingController();
+  final _email = TextEditingController();
+  final _phone = TextEditingController();
+  final _password = TextEditingController();
+
+  Role _role = Role.resident;
+  int? _zoneCode;
+  File? _idProof;
+
+  List<Zone> _zones = const [];
+  bool _loadingZones = false;
+  bool _busy = false;
+  String? _error;
+
+  @override
+  void dispose() {
+    _name.dispose();
+    _email.dispose();
+    _phone.dispose();
+    _password.dispose();
+    super.dispose();
+  }
+
+  Future<void> _loadZones() async {
+    if (_zones.isNotEmpty || _loadingZones) return;
+    setState(() => _loadingZones = true);
+    try {
+      final res = await context.read<ApiClient>().get('/zones');
+      final list = (res['zones'] as List)
+          .map((z) => Zone.fromJson(z as Map<String, dynamic>))
+          .toList();
+      if (mounted) setState(() => _zones = list);
+    } on ApiException catch (e) {
+      if (mounted) setState(() => _error = e.message);
+    } finally {
+      if (mounted) setState(() => _loadingZones = false);
+    }
+  }
+
+  Future<void> _pickIdProof() async {
+    final picked = await ImagePicker().pickImage(
+      source: ImageSource.camera,
+      imageQuality: 70,
+      maxWidth: 1600,
+    );
+    if (picked != null && mounted) setState(() => _idProof = File(picked.path));
+  }
+
+  Future<void> _submit() async {
+    if (!_formKey.currentState!.validate()) return;
+
+    if (_role == Role.worker && _zoneCode == null) {
+      setState(() => _error = 'Choose the zone you will work in');
+      return;
+    }
+
+    setState(() {
+      _busy = true;
+      _error = null;
+    });
+
+    try {
+      final message = await context.read<Session>().register(
+            name: _name.text.trim(),
+            email: _email.text.trim(),
+            password: _password.text,
+            phone: _phone.text.trim(),
+            role: _role,
+            zoneCode: _zoneCode,
+            idProof: _idProof,
+          );
+      if (mounted) {
+        Navigator.of(context).popUntil((r) => r.isFirst);
+        showSnack(context, message);
+      }
+    } on ApiException catch (e) {
+      setState(() => _error = e.message);
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(title: const Text('Create an account')),
+      body: SafeArea(
+        child: SingleChildScrollView(
+          padding: const EdgeInsets.all(20),
+          child: Center(
+            child: ConstrainedBox(
+              constraints: const BoxConstraints(maxWidth: 440),
+              child: Form(
+                key: _formKey,
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    const Text(
+                      'I AM A',
+                      style: TextStyle(
+                        fontSize: 10.5,
+                        letterSpacing: 1.8,
+                        fontWeight: FontWeight.w700,
+                        color: Palette.inkMuted,
+                      ),
+                    ),
+                    const SizedBox(height: 10),
+                    SegmentedButton<Role>(
+                      segments: const [
+                        ButtonSegment(
+                          value: Role.resident,
+                          label: Text('Resident'),
+                          icon: Icon(Icons.person_outline),
+                        ),
+                        ButtonSegment(
+                          value: Role.worker,
+                          label: Text('Worker'),
+                          icon: Icon(Icons.cleaning_services_outlined),
+                        ),
+                      ],
+                      selected: {_role},
+                      onSelectionChanged: (s) {
+                        setState(() => _role = s.first);
+                        if (_role == Role.worker) _loadZones();
+                      },
+                    ),
+                    const SizedBox(height: 8),
+                    Text(
+                      _role == Role.resident
+                          ? 'Students, faculty and staff who report unclean areas.'
+                          : 'Cleaning staff. An admin verifies your account before '
+                              'you can be given any work.',
+                      style: const TextStyle(
+                          fontSize: 12.5, color: Palette.inkSecondary, height: 1.35),
+                    ),
+
+                    const SizedBox(height: 22),
+                    TextFormField(
+                      controller: _name,
+                      textCapitalization: TextCapitalization.words,
+                      decoration: const InputDecoration(
+                        labelText: 'Full name',
+                        prefixIcon: Icon(Icons.badge_outlined),
+                      ),
+                      validator: (v) =>
+                          (v == null || v.trim().length < 2) ? 'Enter your full name' : null,
+                    ),
+                    const SizedBox(height: 12),
+                    TextFormField(
+                      controller: _email,
+                      keyboardType: TextInputType.emailAddress,
+                      decoration: const InputDecoration(
+                        labelText: 'Email',
+                        prefixIcon: Icon(Icons.alternate_email),
+                      ),
+                      validator: (v) =>
+                          (v == null || !v.contains('@')) ? 'Enter a valid email' : null,
+                    ),
+                    const SizedBox(height: 12),
+                    TextFormField(
+                      controller: _phone,
+                      keyboardType: TextInputType.phone,
+                      decoration: const InputDecoration(
+                        labelText: 'Phone',
+                        prefixIcon: Icon(Icons.phone_outlined),
+                      ),
+                      validator: (v) => (v == null || v.trim().length < 10)
+                          ? 'Enter a 10-digit phone number'
+                          : null,
+                    ),
+                    const SizedBox(height: 12),
+                    TextFormField(
+                      controller: _password,
+                      obscureText: true,
+                      decoration: const InputDecoration(
+                        labelText: 'Password',
+                        prefixIcon: Icon(Icons.lock_outline),
+                        helperText: 'At least 6 characters',
+                      ),
+                      validator: (v) =>
+                          (v == null || v.length < 6) ? 'Use at least 6 characters' : null,
+                    ),
+
+                    if (_role == Role.worker) ...[
+                      const SizedBox(height: 24),
+                      const Text(
+                        'YOUR ZONE',
+                        style: TextStyle(
+                          fontSize: 10.5,
+                          letterSpacing: 1.8,
+                          fontWeight: FontWeight.w700,
+                          color: Palette.inkMuted,
+                        ),
+                      ),
+                      const SizedBox(height: 4),
+                      const Text(
+                        'You will be given work in this zone, and can be lent to a '
+                        'nearby zone when it needs help.',
+                        style: TextStyle(
+                            fontSize: 12.5, color: Palette.inkSecondary, height: 1.35),
+                      ),
+                      const SizedBox(height: 12),
+                      if (_loadingZones)
+                        const Padding(
+                          padding: EdgeInsets.symmetric(vertical: 20),
+                          child: Center(child: CircularProgressIndicator()),
+                        )
+                      else
+                        Wrap(
+                          spacing: 8,
+                          runSpacing: 8,
+                          children: [
+                            for (final z in _zones)
+                              _ZoneOption(
+                                zone: z,
+                                selected: _zoneCode == z.code,
+                                onTap: () => setState(() => _zoneCode = z.code),
+                              ),
+                          ],
+                        ),
+                      const SizedBox(height: 18),
+                      OutlinedButton.icon(
+                        onPressed: _pickIdProof,
+                        icon: Icon(_idProof == null
+                            ? Icons.add_a_photo_outlined
+                            : Icons.check_circle_outline),
+                        label: Text(_idProof == null
+                            ? 'Add a photo of your ID'
+                            : 'ID photo added — tap to retake'),
+                      ),
+                      if (_idProof != null) ...[
+                        const SizedBox(height: 10),
+                        ClipRRect(
+                          borderRadius: BorderRadius.circular(10),
+                          child: Image.file(_idProof!, height: 130, fit: BoxFit.cover),
+                        ),
+                      ],
+                    ],
+
+                    if (_error != null) ...[
+                      const SizedBox(height: 18),
+                      Container(
+                        padding: const EdgeInsets.all(12),
+                        decoration: BoxDecoration(
+                          color: Palette.critical.withValues(alpha: 0.08),
+                          borderRadius: BorderRadius.circular(10),
+                          border: Border.all(color: Palette.critical.withValues(alpha: 0.3)),
+                        ),
+                        child: Row(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            const Icon(Icons.error_outline,
+                                color: Palette.critical, size: 19),
+                            const SizedBox(width: 9),
+                            Expanded(
+                              child: Text(
+                                _error!,
+                                style: const TextStyle(
+                                    color: Palette.critical, height: 1.35, fontSize: 13.5),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ],
+
+                    const SizedBox(height: 24),
+                    FilledButton(
+                      onPressed: _busy ? null : _submit,
+                      child: _busy
+                          ? const SizedBox(
+                              width: 20,
+                              height: 20,
+                              child: CircularProgressIndicator(
+                                  strokeWidth: 2.2, color: Colors.white),
+                            )
+                          : const Text('Create account'),
+                    ),
+                    const SizedBox(height: 24),
+                  ],
+                ),
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _ZoneOption extends StatelessWidget {
+  final Zone zone;
+  final bool selected;
+  final VoidCallback onTap;
+
+  const _ZoneOption({required this.zone, required this.selected, required this.onTap});
+
+  @override
+  Widget build(BuildContext context) {
+    final color = colorFromHex(zone.colorHex);
+
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(10),
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+          decoration: BoxDecoration(
+            color: selected ? color.withValues(alpha: 0.16) : Colors.white,
+            borderRadius: BorderRadius.circular(10),
+            border: Border.all(
+              color: selected ? color : Colors.black.withValues(alpha: 0.12),
+              width: selected ? 2 : 1,
+            ),
+          ),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Container(
+                width: 11,
+                height: 11,
+                decoration:
+                    BoxDecoration(color: color, borderRadius: BorderRadius.circular(3)),
+              ),
+              const SizedBox(width: 8),
+              Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Text(
+                    zone.name,
+                    style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w700),
+                  ),
+                  Text(
+                    zone.label,
+                    style: const TextStyle(fontSize: 11, color: Palette.inkSecondary),
+                  ),
+                ],
+              ),
+              if (selected) ...[
+                const SizedBox(width: 8),
+                Icon(Icons.check_circle, size: 17, color: color),
+              ],
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}

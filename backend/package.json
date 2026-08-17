@@ -1,0 +1,51 @@
+{
+  "name": "zonal-backend",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Smart Clean Campus - Zone Based Cleanliness Management & Monitoring System (API)",
+  "main": "src/server.js",
+  "scripts": {
+    "dev": "node --watch src/server.js",
+    "start": "node src/server.js",
+    "build": "prisma generate",
+    "start:prod": "npx prisma migrate deploy && node src/server.js",
+    "seed:prod": "node prisma/seed-production.js",
+    "db:generate": "prisma generate",
+    "db:push": "prisma db push",
+    "db:migrate": "prisma migrate dev --name init",
+    "db:studio": "prisma studio",
+    "db:seed": "node prisma/seed.js",
+    "db:reset": "prisma migrate reset --force",
+    "test:e2e": "node prisma/seed.js && node scripts/smoke-test.js",
+    "test:geo": "node scripts/geo-test.js",
+    "test:emergency": "node prisma/seed.js && node scripts/emergency-test.js",
+    "test:draw": "node prisma/seed.js && node scripts/draw-zone-check.js",
+    "test:allotment": "node prisma/seed.js && node scripts/allotment-audit.js",
+    "test:ratelimit": "node scripts/ratelimit-check.js",
+    "test:all": "npm run test:geo && npm run test:draw && npm run test:allotment && npm run test:e2e && npm run test:emergency && npm run demo:reset",
+    "demo:reset": "node prisma/seed.js && node scripts/confirm-clean.js",
+    "demo:data": "node prisma/seed.js && node scripts/demo-data.js"
+  },
+  "prisma": {
+    "seed": "node prisma/seed.js"
+  },
+  "dependencies": {
+    "@prisma/client": "^6.1.0",
+    "bcryptjs": "^2.4.3",
+    "compression": "^1.8.1",
+    "cors": "^2.8.5",
+    "dotenv": "^16.4.7",
+    "express": "^4.21.2",
+    "express-rate-limit": "^8.6.2",
+    "helmet": "^8.3.0",
+    "jsonwebtoken": "^9.0.2",
+    "morgan": "^1.10.0",
+    "multer": "^1.4.5-lts.1",
+    "node-cron": "^3.0.3",
+    "zod": "^3.24.1"
+  },
+  "devDependencies": {
+    "prisma": "^6.1.0"
+  }
+}

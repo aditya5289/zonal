@@ -1,0 +1,29 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(npm --version)",
+      "Bash(git --version)",
+      "Bash(psql --version)",
+      "Bash(flutter --version)",
+      "PowerShell($env:PGPASSWORD=\"postgres\"; psql -U postgres -h localhost -p 5432 -tc \"SELECT 'CONNECTED_OK';\" 2>&1 | Select-Object -First 5)",
+      "PowerShell(npm install --prefix \"d:\\\\desktop\\\\zonal\\\\backend\" 2>&1)",
+      "PowerShell(npx --prefix \"d:\\\\desktop\\\\zonal\\\\backend\" prisma validate --schema \"d:\\\\desktop\\\\zonal\\\\backend\\\\prisma\\\\schema.prisma\")",
+      "PowerShell(node \"C:\\\\Users\\\\nikhil\\\\AppData\\\\Local\\\\Temp\\\\claude\\\\bundled-skills\\\\2.1.226\\\\38a5087a8781a87063d383dc484090ba\\\\dataviz\\\\scripts\\\\validate_palette.js\" \"#F6C453,#7FB3D5,#8FCB9B,#F19C9C,#F0A868,#B9A5DC,#86C5B8,#F09292\" --mode light 2>&1)",
+      "PowerShell(node $skill \"#0072B2,#E69F00,#009E73,#CC79A7,#56B4E9,#D55E00,#8B6DBF,#6E7B8B\" --mode light 2>&1)",
+      "PowerShell($skill = \"C:\\\\Users\\\\nikhil\\\\AppData\\\\Local\\\\Temp\\\\claude\\\\bundled-skills\\\\2.1.226\\\\38a5087a8781a87063d383dc484090ba\\\\dataviz\\\\scripts\\\\validate_palette.js\")",
+      "PowerShell(node $skill \"#0072B2,#E69F00,#009E73,#CC79A7,#7A52CC,#D55E00,#56B4E9,#8C564B\" --mode light 2>&1)",
+      "PowerShell(node $skill \"#0072B2,#D55E00,#009E73,#CC79A7,#56B4E9,#E69F00,#7A52CC,#94633F\" --mode light 2>&1)",
+      "PowerShell(node $skill \"#6E8B00,#0072B2,#E69F00,#009E73,#7A52CC,#56B4E9,#D55E00,#CC79A7\" --mode light 2>&1)",
+      "PowerShell(node $skill \"#0072B2,#E69F00,#009E73,#7A52CC,#56B4E9,#D55E00,#CC79A7,#6E8B00\" --mode dark 2>&1)",
+      "PowerShell(winget search flutter --accept-source-agreements 2>&1)",
+      "PowerShell(winget search \"android studio\" --accept-source-agreements 2>&1)",
+      "PowerShell(winget install --id Google.AndroidStudio --exact --silent --accept-package-agreements --accept-source-agreements 2>&1)",
+      "PowerShell(winget install --id Google.AndroidStudio --exact --source winget --silent --accept-package-agreements --accept-source-agreements 2>&1)",
+      "Bash(rm -f \"/c/Users/nikhil/AppData/Local/Temp/claude/d--desktop-zonal/dcff7373-53da-4d21-b718-c90c3b90b953/scratchpad/after_login.png\")",
+      "Read(//c/Users/nikhil/AppData/Local/Temp/claude/d--desktop-zonal/dcff7373-53da-4d21-b718-c90c3b90b953/scratchpad//**)",
+      "PowerShell(docker exec zonal-db psql -U zonal -d zonal -t -A -F' | ' -c \"SELECT u.role, u.email, COALESCE\\(z.name,''\\) FROM \"\"User\"\" u LEFT JOIN \"\"Zone\"\" z ON z.\"\"officerId\"\" = u.id WHERE u.role IN \\('ADMIN','RESIDENT','OFFICER'\\) ORDER BY u.role, u.email;\")",
+      "PowerShell(docker exec zonal-db psql -U zonal -d zonal -t -A -F' | ' -c \"SELECT u.email, z.name, w.\"\"approvalStatus\"\", w.\"\"dutyStatus\"\", w.availability FROM \"\"WorkerProfile\"\" w JOIN \"\"User\"\" u ON u.id = w.\"\"userId\"\" JOIN \"\"Zone\"\" z ON z.id = w.\"\"zoneId\"\" ORDER BY z.code, u.email;\")",
+      "Bash(docker exec *)"
+    ]
+  }
+}

@@ -1,0 +1,54 @@
+# systemd unit for the Smart Clean Campus API.
+#
+#   sudo cp deploy/zonal-api.service /etc/systemd/system/
+#   sudo systemctl daemon-reload
+#   sudo systemctl enable --now zonal-api
+#   sudo systemctl status zonal-api
+#   sudo journalctl -u zonal-api -f
+#
+# systemd rather than PM2: it is already on the machine, it starts on boot
+# without extra setup, and the university's admins will know how to inspect it.
+
+[Unit]
+Description=Smart Clean Campus API
+Documentation=https://github.com/mmmut/smart-clean-campus
+After=network.target postgresql.service
+Wants=postgresql.service
+
+[Service]
+Type=simple
+User=zonal
+Group=zonal
+WorkingDirectory=/opt/zonal/backend
+
+# .env is read by the app itself via dotenv; this covers anything set outside.
+Environment=NODE_ENV=production
+EnvironmentFile=/opt/zonal/backend/.env
+
+ExecStart=/usr/bin/node src/server.js
+
+Restart=always
+RestartSec=5
+# Give up if it crash-loops, so a broken deploy is obvious rather than silent.
+StartLimitIntervalSec=60
+StartLimitBurst=5
+
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=zonal-api
+
+# --- Hardening -------------------------------------------------------------
+# The service needs to read its own directory and write uploads. Nothing else.
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/var/lib/zonal
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+RestrictSUIDSGID=true
+LockPersonality=true
+
+[Install]
+WantedBy=multi-user.target

@@ -1,0 +1,47 @@
+# --- secrets ---------------------------------------------------------------
+# Never commit these. If one slips in, rotate everything it contained -
+# git history keeps it forever, even after a later deletion.
+.env
+.env.*
+!.env.example
+!.env.production.example
+
+# --- dependencies ----------------------------------------------------------
+node_modules/
+
+# --- backend ---------------------------------------------------------------
+backend/uploads/
+*.log
+
+# --- flutter / android -----------------------------------------------------
+mobile/build/
+mobile/.dart_tool/
+mobile/.flutter-plugins
+mobile/.flutter-plugins-dependencies
+mobile/android/.gradle/
+mobile/android/build/
+mobile/android/app/build/
+mobile/android/local.properties
+mobile/android/app/debug/
+mobile/android/app/profile/
+mobile/android/app/release/
+mobile/ios/Pods/
+mobile/ios/.symlinks/
+mobile/web/
+
+# Signing keys - committing these lets anyone publish as you.
+mobile/android/key.properties
+*.jks
+*.keystore
+
+# --- build outputs ---------------------------------------------------------
+# The APKs are ~166 MB each and rebuildable. GitHub rejects files over 100 MB.
+*.apk
+*.aab
+
+# --- editors / os ----------------------------------------------------------
+.idea/
+.vscode/
+*.iml
+.DS_Store
+Thumbs.db

@@ -1,0 +1,4 @@
+-- AlterTable
+ALTER TABLE "Zone" ALTER COLUMN "polygon" DROP NOT NULL,
+ALTER COLUMN "centroidLat" DROP NOT NULL,
+ALTER COLUMN "centroidLng" DROP NOT NULL;

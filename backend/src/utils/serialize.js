@@ -1,0 +1,117 @@
+/** Shared shapes so every endpoint returns a complaint the same way. */
+
+export const complaintInclude = {
+  zone: { select: { id: true, code: true, name: true, label: true, colorHex: true } },
+  lendingZone: { select: { id: true, code: true, name: true } },
+  reporter: { select: { id: true, name: true, phone: true } },
+  assignedOfficer: { select: { id: true, name: true, phone: true } },
+  assignedWorker: { select: { id: true, name: true, phone: true } },
+  media: true,
+};
+
+/**
+ * Re-read a complaint with all of its relations.
+ *
+ * `transition()` returns a bare `update()` result, which carries the scalar
+ * columns but none of the relations - serializing that directly yields
+ * `zone: null` and `lendingZone: null`. Any route that returns a complaint
+ * after a transition must load it through here first.
+ */
+export const loadComplaintForResponse = (db, id) =>
+  db.complaint.findUnique({ where: { id }, include: complaintInclude });
+
+export function serializeMedia(m) {
+  return {
+    id: m.id,
+    url: m.url,
+    type: m.type,
+    phase: m.phase,
+    durationSec: m.durationSec,
+    location:
+      m.capturedLat != null && m.capturedLng != null
+        ? { lat: m.capturedLat, lng: m.capturedLng }
+        : null,
+    capturedAt: m.capturedAt,
+  };
+}
+
+export function serializeComplaint(c) {
+  if (!c) return null;
+
+  const media = c.media ?? [];
+
+  return {
+    id: c.id,
+    ref: c.ref,
+    category: c.category,
+    description: c.description,
+    status: c.status,
+    priority: c.priority,
+    isEmergency: c.isEmergency ?? false,
+
+    location: {
+      lat: c.lat,
+      lng: c.lng,
+      accuracyM: c.accuracyM,
+      capturedAt: c.locationCapturedAt,
+      /// Set when the resident corrected a poor GPS fix. The raw reading is
+      /// kept so the correction is auditable rather than silent.
+      adjusted: c.locationAdjusted ?? false,
+      adjustedM: c.locationAdjustedM,
+      raw: c.gpsLat != null ? { lat: c.gpsLat, lng: c.gpsLng, accuracyM: c.gpsAccuracyM } : null,
+    },
+    /// Where a worker should actually walk to. The zone says which part of
+    /// campus; this says which building.
+    landmark: c.landmarkName ?? c.landmark?.name ?? null,
+    landmarkId: c.landmarkId,
+    landmarkNote: c.landmarkNote,
+    /// Set when this place was signed off only days ago and is dirty again.
+    isRecurrence: c.recurrenceOfId != null,
+    recurrenceDays: c.recurrenceDays,
+    zone: c.zone,
+    zoneOverridden: c.zoneOverridden,
+    zoneResolvedBy: c.zoneResolvedBy,
+    zoneDistanceM: c.zoneDistanceM,
+    /// True when the GPS fix did not land cleanly inside one boundary. The
+    /// admin screen flags these so a human decides before it reaches an officer.
+    isBoundaryCase:
+      c.zoneResolvedBy != null &&
+      !['POLYGON', 'RESIDENT_OVERRIDE', 'ADMIN_OVERRIDE'].includes(c.zoneResolvedBy),
+
+    reporter: c.reporter,
+    officer: c.assignedOfficer,
+    worker: c.assignedWorker,
+
+    isCrossZone: c.isCrossZone,
+    lendingZone: c.lendingZone,
+
+    beforeMedia: media.filter((m) => m.phase === 'BEFORE').map(serializeMedia),
+    afterMedia: media.filter((m) => m.phase === 'AFTER').map(serializeMedia),
+
+    satisfaction: c.satisfaction,
+    unsatisfiedNote: c.unsatisfiedNote,
+    reopenCount: c.reopenCount,
+    rejectionReason: c.rejectionReason,
+    escalationReason: c.escalationReason,
+
+    timestamps: {
+      submittedAt: c.submittedAt,
+      approvedAt: c.approvedAt,
+      allottedOfficerAt: c.allottedOfficerAt,
+      officerActedAt: c.officerActedAt,
+      allottedWorkerAt: c.allottedWorkerAt,
+      startedAt: c.startedAt,
+      doneAt: c.doneAt,
+      closedAt: c.closedAt,
+      escalatedAt: c.escalatedAt,
+    },
+    slaDueAt: c.slaDueAt,
+    isOverdue: c.slaDueAt ? new Date(c.slaDueAt) < new Date() : false,
+
+    // Minutes from submit to close - the headline analytics number.
+    resolutionMinutes:
+      c.closedAt && c.submittedAt
+        ? Math.round((new Date(c.closedAt) - new Date(c.submittedAt)) / 60000)
+        : null,
+  };
+}

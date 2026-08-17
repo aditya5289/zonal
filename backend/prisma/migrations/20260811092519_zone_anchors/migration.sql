@@ -1,0 +1,4 @@
+-- AlterTable
+ALTER TABLE "Zone" ADD COLUMN     "anchorLat" DOUBLE PRECISION,
+ADD COLUMN     "anchorLng" DOUBLE PRECISION,
+ADD COLUMN     "anchorRadiusM" DOUBLE PRECISION;

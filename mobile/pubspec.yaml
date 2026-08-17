@@ -1,0 +1,51 @@
+name: zonal
+description: Smart Clean Campus - Zone Based Cleanliness Management & Monitoring System
+publish_to: "none"
+version: 1.0.0+1
+
+environment:
+  sdk: ">=3.4.0 <4.0.0"
+
+dependencies:
+  flutter:
+    sdk: flutter
+
+  # Networking
+  http: ^1.2.2
+  # Used to set the Content-Type on uploads; without it every file is sent as
+  # application/octet-stream.
+  http_parser: ^4.0.2
+
+  # State management - deliberately the simplest thing that works
+  provider: ^6.1.2
+
+  # Session persistence
+  shared_preferences: ^2.3.3
+
+  # Compulsory geotag
+  geolocator: ^13.0.2
+  permission_handler: ^11.3.1
+
+  # Evidence capture: photo + video
+  image_picker: ^1.1.2
+
+  # Evidence capture: audio
+  record: ^7.1.1
+  audioplayers: ^6.1.0
+
+  # Campus map + heatmap (OpenStreetMap - no API key, no billing card)
+  flutter_map: ^7.0.2
+  latlong2: ^0.9.1
+
+  # Formatting
+  intl: ^0.19.0
+
+  cupertino_icons: ^1.0.8
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^4.0.0
+
+flutter:
+  uses-material-design: true
