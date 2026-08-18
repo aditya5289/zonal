@@ -6,16 +6,23 @@ import '../../core/palette.dart';
 import '../../shared/authed_image.dart';
 import '../../shared/ui.dart';
 
-/// The worker onboarding gate. Until an admin approves someone here, the
-/// server refuses to allot them a single task.
-class VerifyWorkersScreen extends StatefulWidget {
-  const VerifyWorkersScreen({super.key});
+/// The onboarding gate for the two roles that self-register and wait.
+///
+/// Workers and officers go through the same three-state review, so they share
+/// this screen rather than having two that drift apart. What differs is what
+/// approval grants: a worker joins a roster, an officer takes a zone that only
+/// one person can hold.
+class VerifyPeopleScreen extends StatefulWidget {
+  const VerifyPeopleScreen({super.key, this.officers = false});
+
+  /// Review officer applications instead of worker registrations.
+  final bool officers;
 
   @override
-  State<VerifyWorkersScreen> createState() => _VerifyWorkersScreenState();
+  State<VerifyPeopleScreen> createState() => _VerifyPeopleScreenState();
 }
 
-class _VerifyWorkersScreenState extends State<VerifyWorkersScreen>
+class _VerifyPeopleScreenState extends State<VerifyPeopleScreen>
     with SingleTickerProviderStateMixin {
   late final TabController _tabs = TabController(length: 3, vsync: this);
   final _statuses = ['PENDING', 'ACTIVE', 'REJECTED'];
@@ -45,11 +52,13 @@ class _VerifyWorkersScreenState extends State<VerifyWorkersScreen>
     super.dispose();
   }
 
+  String get _collection => widget.officers ? 'officers' : 'workers';
+
   Future<List<Map<String, dynamic>>> _load() async {
     final res = await context
         .read<ApiClient>()
-        .get('/admin/workers', query: {'status': _statuses[_index]});
-    return (res['workers'] as List).cast<Map<String, dynamic>>();
+        .get('/admin/$_collection', query: {'status': _statuses[_index]});
+    return (res[_collection] as List).cast<Map<String, dynamic>>();
   }
 
   Future<void> _refresh() async {
@@ -78,7 +87,7 @@ class _VerifyWorkersScreenState extends State<VerifyWorkersScreen>
 
     try {
       final res = await context.read<ApiClient>().post(
-        '/admin/workers/${worker['userId']}/verify',
+        '/admin/$_collection/${worker['userId']}/verify',
         {'approve': approve, if (note != null) 'note': note},
       );
       if (mounted) {
@@ -98,7 +107,7 @@ class _VerifyWorkersScreenState extends State<VerifyWorkersScreen>
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Workers'),
+        title: Text(widget.officers ? 'Zone officers' : 'Workers'),
         bottom: TabBar(
           controller: _tabs,
           indicatorColor: Colors.white,
@@ -131,11 +140,13 @@ class _VerifyWorkersScreenState extends State<VerifyWorkersScreen>
                 },
                 title: switch (_index) {
                   0 => 'Nobody waiting',
-                  1 => 'No active workers',
+                  1 => widget.officers ? 'No appointed officers' : 'No active workers',
                   _ => 'Nobody rejected',
                 },
                 subtitle: _index == 0
-                    ? 'New worker registrations appear here for you to check.'
+                    ? (widget.officers
+                        ? 'Officer applications appear here for you to check.'
+                        : 'New worker registrations appear here for you to check.')
                     : null,
               );
             }
@@ -145,8 +156,9 @@ class _VerifyWorkersScreenState extends State<VerifyWorkersScreen>
               child: ListView.builder(
                 padding: const EdgeInsets.symmetric(vertical: 8),
                 itemCount: workers.length,
-                itemBuilder: (_, i) => _WorkerCard(
+                itemBuilder: (_, i) => _PersonCard(
                   worker: workers[i],
+                  officer: widget.officers,
                   showActions: _index == 0,
                   onApprove: () => _decide(workers[i], true),
                   onReject: () => _decide(workers[i], false),
@@ -160,14 +172,16 @@ class _VerifyWorkersScreenState extends State<VerifyWorkersScreen>
   }
 }
 
-class _WorkerCard extends StatelessWidget {
+class _PersonCard extends StatelessWidget {
   final Map<String, dynamic> worker;
+  final bool officer;
   final bool showActions;
   final VoidCallback onApprove;
   final VoidCallback onReject;
 
-  const _WorkerCard({
+  const _PersonCard({
     required this.worker,
+    required this.officer,
     required this.showActions,
     required this.onApprove,
     required this.onReject,
@@ -246,6 +260,34 @@ class _WorkerCard extends StatelessWidget {
                 ),
               ],
             ),
+
+            // A zone has one officer, and applications sit in this queue for
+            // days. Say up front when someone else has taken the zone in the
+            // meantime, rather than letting the admin find out from a 409.
+            if (officer && worker['zoneIsTaken'] == true) ...[
+              const SizedBox(height: 12),
+              Container(
+                padding: const EdgeInsets.all(11),
+                decoration: BoxDecoration(
+                  color: Palette.critical.withValues(alpha: 0.08),
+                  borderRadius: BorderRadius.circular(9),
+                  border: Border.all(color: Palette.critical.withValues(alpha: 0.28)),
+                ),
+                child: const Row(
+                  children: [
+                    Icon(Icons.info_outline, size: 17, color: Palette.critical),
+                    SizedBox(width: 9),
+                    Expanded(
+                      child: Text(
+                        'This zone already has an officer. Remove them before '
+                        'approving this application.',
+                        style: TextStyle(fontSize: 12.5, height: 1.35),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
 
             if (idProof != null) ...[
               const SizedBox(height: 13),

@@ -43,18 +43,18 @@ enum Availability {
 }
 
 enum ComplaintStatus {
-  SUBMITTED           // resident hit submit
-  UNDER_REVIEW        // waiting on Admin to confirm it is genuine
-  REJECTED_INVALID    // Admin rejected it (spam / unclear / not cleanliness)  [terminal]
+  SUBMITTED // resident hit submit
+  UNDER_REVIEW // waiting on Admin to confirm it is genuine
+  REJECTED_INVALID // Admin rejected it (spam / unclear / not cleanliness)  [terminal]
   ALLOTTED_TO_OFFICER // engine auto-routed it to that zone's officer
-  HELP_REQUESTED      // officer's workers all busy, asking other officers
-  ALLOTTED_TO_WORKER  // a worker has been assigned
-  IN_PROGRESS         // worker tapped Start Work
-  WORK_DONE           // worker uploaded after-media, awaiting resident
-  REOPENED            // resident was not satisfied, back to the worker
-  ESCALATED           // an SLA or retry limit blew, Admin now owns it
-  CLOSED              // resident ticked satisfied                            [terminal]
-  AUTO_CLOSED         // resident never responded within AUTO_CLOSE_HOURS      [terminal]
+  HELP_REQUESTED // officer's workers all busy, asking other officers
+  ALLOTTED_TO_WORKER // a worker has been assigned
+  IN_PROGRESS // worker tapped Start Work
+  WORK_DONE // worker uploaded after-media, awaiting resident
+  REOPENED // resident was not satisfied, back to the worker
+  ESCALATED // an SLA or retry limit blew, Admin now owns it
+  CLOSED // resident ticked satisfied                            [terminal]
+  AUTO_CLOSED // resident never responded within AUTO_CLOSE_HOURS      [terminal]
 }
 
 /// Grouping for the landmark picker, so a list of 20+ places stays readable.
@@ -129,6 +129,9 @@ model User {
   // An OFFICER owns exactly one zone (via Zone.officerId)
   zoneOwned Zone? @relation("ZoneOfficer")
 
+  // An OFFICER's application, pending until an admin verifies it
+  officerProfile OfficerProfile?
+
   // Relations back to complaints, by the hat this user was wearing
   complaintsReported  Complaint[] @relation("Reporter")
   complaintsApproved  Complaint[] @relation("ApprovedByAdmin")
@@ -148,15 +151,15 @@ model User {
 /// [[lat, lng], ...] so zones stay editable data - the Admin can retrace them
 /// onto the real campus later without any code change.
 model Zone {
-  id        String  @id @default(cuid())
-  code      Int     @unique // 1..8, matches the poster
-  name      String // "Zone 1"
-  label     String // "Academic Blocks (North)"
-  colorHex  String  @default("#4F86C6")
+  id          String @id @default(cuid())
+  code        Int    @unique // 1..8, matches the poster
+  name        String // "Zone 1"
+  label       String // "Academic Blocks (North)"
+  colorHex    String @default("#4F86C6")
   /// The drawn boundary as [[lat,lng], ...]. NULL until an admin draws it -
   /// zones ship with no shape at all, because a placeholder rectangle is worse
   /// than nothing: it looks configured, so nobody corrects it.
-  polygon   Json?
+  polygon     Json?
   /// Computed from the polygon when it is saved. Null while undrawn.
   centroidLat Float?
   centroidLng Float?
@@ -171,15 +174,16 @@ model Zone {
 
   /// Codes of the zones that physically border this one, nearest first.
   /// Used to order officer-to-officer help requests sensibly.
-  neighbourCodes Int[]  @default([])
+  neighbourCodes Int[] @default([])
 
   officerId String? @unique
   officer   User?   @relation("ZoneOfficer", fields: [officerId], references: [id], onDelete: SetNull)
 
-  workers    WorkerProfile[]
-  complaints Complaint[]     @relation("ComplaintZone")
-  lentTo     Complaint[]     @relation("LendingZone")
-  helpFrom   HelpRequest[]   @relation("HelpFromZone")
+  workers             WorkerProfile[]
+  officerApplications OfficerProfile[] @relation("OfficerApplications")
+  complaints          Complaint[]      @relation("ComplaintZone")
+  lentTo              Complaint[]      @relation("LendingZone")
+  helpFrom            HelpRequest[]    @relation("HelpFromZone")
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -191,15 +195,15 @@ model Zone {
 /// does not tell a worker where to actually go. A landmark does: "CSE
 /// Department". It is required on every complaint for exactly that reason.
 model Landmark {
-  id       String           @id @default(cuid())
-  name     String           @unique
-  category LandmarkCategory
+  id        String           @id @default(cuid())
+  name      String           @unique
+  category  LandmarkCategory
   /// Which zone this place sits in, when it is known. Used to sanity-check a
   /// GPS fix against what the resident says, not to override it.
-  zoneCode Int?
+  zoneCode  Int?
   /// Display order within its category.
-  sortOrder Int     @default(0)
-  isActive  Boolean @default(true)
+  sortOrder Int              @default(0)
+  isActive  Boolean          @default(true)
 
   complaints Complaint[]
 
@@ -227,7 +231,7 @@ model WorkerProfile {
   availability Availability @default(AVAILABLE)
 
   /// Live tasks currently held. The engine treats 0 as "free".
-  activeTaskCount Int @default(0)
+  activeTaskCount     Int @default(0)
   /// Reset nightly - used to spread work fairly across a zone's roster.
   tasksCompletedToday Int @default(0)
   tasksCompletedTotal Int @default(0)
@@ -261,9 +265,9 @@ model Complaint {
   // --- compulsory geotag -------------------------------------------------
   /// The confirmed pin - where the complaint actually is. This is what
   /// resolves the zone and what a worker navigates to.
-  lat        Float
-  lng        Float
-  accuracyM  Float?
+  lat       Float
+  lng       Float
+  accuracyM Float?
 
   /// The raw device fix, kept separately and never overwritten.
   ///
@@ -271,35 +275,35 @@ model Complaint {
   /// nudge the pin onto the right spot. Keeping the original alongside the
   /// correction means an adjustment stays auditable: you can always see where
   /// the phone actually was, and how far it was moved.
-  gpsLat         Float?
-  gpsLng         Float?
-  gpsAccuracyM   Float?
+  gpsLat             Float?
+  gpsLng             Float?
+  gpsAccuracyM       Float?
   /// When the fix was taken - not when the complaint was submitted. The gap
   /// matters if someone captures a location and files it much later.
   locationCapturedAt DateTime?
   /// True when the pin was moved off the raw GPS reading.
-  locationAdjusted   Boolean @default(false)
+  locationAdjusted   Boolean   @default(false)
   /// How far it was moved, in metres.
   locationAdjustedM  Float?
   /// Zone resolved at submit time. Frozen from then on: re-drawing a zone
   /// boundary must never move historical complaints, or the analytics quietly
   /// rewrite their own history.
-  zoneId     String
-  zone       Zone   @relation("ComplaintZone", fields: [zoneId], references: [id])
+  zoneId             String
+  zone               Zone      @relation("ComplaintZone", fields: [zoneId], references: [id])
   /// True when the resident overrode the auto-detected zone.
-  zoneOverridden Boolean @default(false)
+  zoneOverridden     Boolean   @default(false)
   /// How the zone was decided: POLYGON | OVERLAP_SMALLEST | NEAREST_EDGE |
   /// OUT_OF_BOUNDS | RESIDENT_OVERRIDE | ADMIN_OVERRIDE.
   /// Anything other than POLYGON is a boundary case the admin should eyeball.
-  zoneResolvedBy String?
+  zoneResolvedBy     String?
   /// Metres from the resolved zone's boundary. 0 when inside it.
-  zoneDistanceM  Float?
+  zoneDistanceM      Float?
 
   // --- where exactly (compulsory) ---------------------------------------
   /// The named place the resident picked. Required by the API on every new
   /// complaint - GPS says which zone, this says which building.
-  landmarkId String?
-  landmark   Landmark? @relation(fields: [landmarkId], references: [id])
+  landmarkId   String?
+  landmark     Landmark? @relation(fields: [landmarkId], references: [id])
   /// Snapshot of the name at submit time, so renaming a landmark later does
   /// not silently rewrite what past complaints said.
   landmarkName String?
@@ -337,28 +341,28 @@ model Complaint {
   lendingZone   Zone?   @relation("LendingZone", fields: [lendingZoneId], references: [id])
 
   // --- lifecycle timestamps (these drive every analytics number) ---------
-  submittedAt    DateTime  @default(now())
-  approvedAt     DateTime?
+  submittedAt       DateTime  @default(now())
+  approvedAt        DateTime?
   allottedOfficerAt DateTime?
-  officerActedAt DateTime?
+  officerActedAt    DateTime?
   allottedWorkerAt  DateTime?
-  startedAt      DateTime?
-  doneAt         DateTime?
-  closedAt       DateTime?
+  startedAt         DateTime?
+  doneAt            DateTime?
+  closedAt          DateTime?
 
   /// When the current stage's clock runs out. Recomputed on every transition.
-  slaDueAt DateTime?
-  escalatedAt DateTime?
+  slaDueAt         DateTime?
+  escalatedAt      DateTime?
   escalationReason String?
 
   // --- the resident's final say -----------------------------------------
-  satisfaction     SatisfactionState @default(PENDING)
-  unsatisfiedNote  String?
-  reopenCount      Int               @default(0)
+  satisfaction    SatisfactionState @default(PENDING)
+  unsatisfiedNote String?
+  reopenCount     Int               @default(0)
 
-  media        Media[]
-  statusLogs   StatusLog[]
-  helpRequests HelpRequest[]
+  media         Media[]
+  statusLogs    StatusLog[]
+  helpRequests  HelpRequest[]
   notifications Notification[]
 
   createdAt DateTime @default(now())
@@ -374,15 +378,15 @@ model Complaint {
 /// Photo / video / audio attached to a complaint. Every item carries the GPS
 /// fix taken at the moment of capture - that is the "fixed location" rule.
 model Media {
-  id          String     @id @default(cuid())
+  id          String    @id @default(cuid())
   complaintId String
-  complaint   Complaint  @relation(fields: [complaintId], references: [id], onDelete: Cascade)
+  complaint   Complaint @relation(fields: [complaintId], references: [id], onDelete: Cascade)
 
-  url        String
-  type       MediaType
-  phase      MediaPhase @default(BEFORE)
-  mimeType   String?
-  sizeBytes  Int?
+  url         String
+  type        MediaType
+  phase       MediaPhase @default(BEFORE)
+  mimeType    String?
+  sizeBytes   Int?
   durationSec Int?
 
   capturedLat Float?
@@ -397,9 +401,9 @@ model Media {
 
 /// Officer -> Officer "all my workers are busy, can you lend one?" request.
 model HelpRequest {
-  id          String            @id @default(cuid())
+  id          String    @id @default(cuid())
   complaintId String
-  complaint   Complaint         @relation(fields: [complaintId], references: [id], onDelete: Cascade)
+  complaint   Complaint @relation(fields: [complaintId], references: [id], onDelete: Cascade)
 
   fromOfficerId String
   fromOfficer   User   @relation("HelpFromOfficer", fields: [fromOfficerId], references: [id])
@@ -419,7 +423,7 @@ model HelpRequest {
   note        String?
   expiresAt   DateTime
   respondedAt DateTime?
-  createdAt   DateTime @default(now())
+  createdAt   DateTime  @default(now())
 
   @@index([status, expiresAt])
   @@index([complaintId])
@@ -427,15 +431,15 @@ model HelpRequest {
 
 /// Full audit trail - every transition, who caused it, when.
 model StatusLog {
-  id          String          @id @default(cuid())
+  id          String    @id @default(cuid())
   complaintId String
-  complaint   Complaint       @relation(fields: [complaintId], references: [id], onDelete: Cascade)
+  complaint   Complaint @relation(fields: [complaintId], references: [id], onDelete: Cascade)
 
   fromStatus ComplaintStatus?
   toStatus   ComplaintStatus
 
-  actorId String?
-  actor   User?   @relation(fields: [actorId], references: [id])
+  actorId  String?
+  actor    User?   @relation(fields: [actorId], references: [id])
   /// True when the system moved it (engine routing, SLA timeout, auto-close).
   isSystem Boolean @default(false)
 
@@ -460,4 +464,32 @@ model Notification {
   createdAt DateTime @default(now())
 
   @@index([userId, readAt])
+}
+
+/// An officer's application to run a zone.
+///
+/// Mirrors WorkerProfile deliberately: officers self-register and wait for the
+/// same admin verification, so the two onboarding paths behave identically
+/// rather than each having their own rules.
+///
+/// The zone here is the one applied for, NOT the one held. Ownership is
+/// Zone.officerId, and the admin sets it only on approval - otherwise a single
+/// unapproved application would lock a zone nobody can be appointed to.
+model OfficerProfile {
+  id     String @id @default(cuid())
+  userId String @unique
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  zoneId String
+  zone   Zone   @relation("OfficerApplications", fields: [zoneId], references: [id])
+
+  idProofUrl     String?
+  approvalStatus ApprovalStatus @default(PENDING)
+  rejectionNote  String?
+  approvedAt     DateTime?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([zoneId, approvalStatus])
 }

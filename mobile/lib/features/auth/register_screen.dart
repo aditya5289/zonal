@@ -27,6 +27,10 @@ class _RegisterScreenState extends State<RegisterScreen> {
 
   Role _role = Role.resident;
   int? _zoneCode;
+
+  /// Workers and officers both pick a zone and both wait on the admin. Only
+  /// what the zone means to them differs.
+  bool get _needsZone => _role == Role.worker || _role == Role.officer;
   File? _idProof;
 
   List<Zone> _zones = const [];
@@ -71,8 +75,10 @@ class _RegisterScreenState extends State<RegisterScreen> {
   Future<void> _submit() async {
     if (!_formKey.currentState!.validate()) return;
 
-    if (_role == Role.worker && _zoneCode == null) {
-      setState(() => _error = 'Choose the zone you will work in');
+    if (_needsZone && _zoneCode == null) {
+      setState(() => _error = _role == Role.worker
+          ? 'Choose the zone you will work in'
+          : 'Choose the zone you want to run');
       return;
     }
 
@@ -139,19 +145,35 @@ class _RegisterScreenState extends State<RegisterScreen> {
                           label: Text('Worker'),
                           icon: Icon(Icons.cleaning_services_outlined),
                         ),
+                        ButtonSegment(
+                          value: Role.officer,
+                          label: Text('Officer'),
+                          icon: Icon(Icons.shield_outlined),
+                        ),
                       ],
                       selected: {_role},
                       onSelectionChanged: (s) {
-                        setState(() => _role = s.first);
-                        if (_role == Role.worker) _loadZones();
+                        setState(() {
+                          _role = s.first;
+                          // A zone chosen as a worker means something different
+                          // as an officer, so never carry the choice across.
+                          _zoneCode = null;
+                        });
+                        if (_needsZone) _loadZones();
                       },
                     ),
                     const SizedBox(height: 8),
                     Text(
-                      _role == Role.resident
-                          ? 'Students, faculty and staff who report unclean areas.'
-                          : 'Cleaning staff. An admin verifies your account before '
-                              'you can be given any work.',
+                      switch (_role) {
+                        Role.resident =>
+                          'Students, faculty and staff who report unclean areas.',
+                        Role.officer =>
+                          'You run one zone: complaints from it come to you, and '
+                              'you allot them to your workers. An admin approves '
+                              'you before the zone is yours.',
+                        _ => 'Cleaning staff. An admin verifies your account before '
+                            'you can be given any work.',
+                      },
                       style: const TextStyle(
                           fontSize: 12.5, color: Palette.inkSecondary, height: 1.35),
                     ),
@@ -203,11 +225,11 @@ class _RegisterScreenState extends State<RegisterScreen> {
                           (v == null || v.length < 6) ? 'Use at least 6 characters' : null,
                     ),
 
-                    if (_role == Role.worker) ...[
+                    if (_needsZone) ...[
                       const SizedBox(height: 24),
-                      const Text(
-                        'YOUR ZONE',
-                        style: TextStyle(
+                      Text(
+                        _role == Role.worker ? 'YOUR ZONE' : 'ZONE YOU WANT TO RUN',
+                        style: const TextStyle(
                           fontSize: 10.5,
                           letterSpacing: 1.8,
                           fontWeight: FontWeight.w700,
@@ -215,10 +237,13 @@ class _RegisterScreenState extends State<RegisterScreen> {
                         ),
                       ),
                       const SizedBox(height: 4),
-                      const Text(
-                        'You will be given work in this zone, and can be lent to a '
-                        'nearby zone when it needs help.',
-                        style: TextStyle(
+                      Text(
+                        _role == Role.worker
+                            ? 'You will be given work in this zone, and can be lent '
+                                'to a nearby zone when it needs help.'
+                            : 'A zone has one officer. If someone already runs the '
+                                'one you pick, you will be told straight away.',
+                        style: const TextStyle(
                             fontSize: 12.5, color: Palette.inkSecondary, height: 1.35),
                       ),
                       const SizedBox(height: 12),
@@ -247,7 +272,9 @@ class _RegisterScreenState extends State<RegisterScreen> {
                             ? Icons.add_a_photo_outlined
                             : Icons.check_circle_outline),
                         label: Text(_idProof == null
-                            ? 'Add a photo of your ID'
+                            ? (_role == Role.worker
+                                ? 'Add a photo of your ID'
+                                : 'Add a photo of your staff ID')
                             : 'ID photo added — tap to retake'),
                       ),
                       if (_idProof != null) ...[

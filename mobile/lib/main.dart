@@ -8,6 +8,7 @@ import 'core/theme.dart';
 import 'features/auth/login_screen.dart';
 import 'features/admin/admin_home.dart';
 import 'features/officer/officer_home.dart';
+import 'features/officer/officer_pending_screen.dart';
 import 'features/resident/resident_home.dart';
 import 'features/worker/worker_home.dart';
 
@@ -71,7 +72,12 @@ class _RoleRouter extends StatelessWidget {
     return switch (session.role) {
       Role.resident => const ResidentHome(),
       Role.worker => const WorkerHome(),
-      Role.officer => const OfficerHome(),
+      // An officer who has not been appointed yet owns no zone, and the
+      // dashboard assumes one throughout. Send them to the waiting screen
+      // instead of a dashboard that would read as broken.
+      Role.officer => session.user?.awaitingVerification == true
+          ? const OfficerPendingScreen()
+          : const OfficerHome(),
       Role.admin => const AdminHome(),
       Role.unknown => const _UnknownRole(),
     };

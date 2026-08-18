@@ -31,6 +31,7 @@ export async function authenticate(req, _res, next) {
       where: { id: payload.sub },
       include: {
         workerProfile: { include: { zone: true } },
+        officerProfile: { include: { zone: true } },
         zoneOwned: true,
       },
     });
@@ -72,11 +73,32 @@ export function requireApprovedWorker(req, _res, next) {
   next();
 }
 
-/** Officer guard that also confirms they actually own a zone. */
+/**
+ * Officer guard that also confirms they actually own a zone.
+ *
+ * Officers now self-register, so "no zone" has three quite different causes
+ * and a single message for all of them tells the officer nothing about what
+ * to do next.
+ */
 export function requireZoneOfficer(req, _res, next) {
   if (req.user?.role === 'ADMIN') return next(); // admin may act anywhere
-  if (!req.user?.zoneOwned) {
-    return next(new ApiError(403, 'You are not assigned to any zone'));
+  if (req.user?.zoneOwned) return next();
+
+  const application = req.user?.officerProfile;
+  if (application?.approvalStatus === 'PENDING') {
+    return next(
+      new ApiError(403, 'Your application is awaiting verification by the campus admin'),
+    );
   }
-  next();
+  if (application?.approvalStatus === 'REJECTED') {
+    return next(
+      new ApiError(
+        403,
+        application.rejectionNote
+          ? `Your application was not approved: ${application.rejectionNote}`
+          : 'Your application was not approved. Contact the campus admin.',
+      ),
+    );
+  }
+  return next(new ApiError(403, 'You are not assigned to any zone'));
 }

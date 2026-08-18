@@ -38,7 +38,25 @@ function publicUser(user) {
           tasksCompletedTotal: user.workerProfile.tasksCompletedTotal,
         }
       : null,
-    // Officer-only
+    // Officer-only: the application, which exists from signup and is how the
+    // app knows to show a "waiting for verification" screen rather than an
+    // empty dashboard.
+    officer: user.officerProfile
+      ? {
+          zoneId: user.officerProfile.zoneId,
+          zone: user.officerProfile.zone
+            ? {
+                id: user.officerProfile.zone.id,
+                code: user.officerProfile.zone.code,
+                name: user.officerProfile.zone.name,
+                label: user.officerProfile.zone.label,
+              }
+            : null,
+          approvalStatus: user.officerProfile.approvalStatus,
+          rejectionNote: user.officerProfile.rejectionNote,
+        }
+      : null,
+    // The zone actually held. Null until an admin approves the application.
     zone: user.zoneOwned
       ? {
           id: user.zoneOwned.id,
@@ -71,19 +89,27 @@ const registerSchema = z.object({
   email: emailField,
   phone: z.string().min(10).max(15).optional(),
   password: z.string().min(6, 'Password must be at least 6 characters'),
-  role: z.enum(['RESIDENT', 'WORKER']).default('RESIDENT'),
-  // Workers must pick the zone they will serve
+  role: z.enum(['RESIDENT', 'WORKER', 'OFFICER']).default('RESIDENT'),
+  // Workers pick the zone they will serve; officers the zone they want to run
   zoneCode: z.coerce.number().int().min(1).max(8).optional(),
 });
+
+/** Roles that self-register but cannot act until an admin verifies them. */
+const VERIFIED_ROLES = new Set(['WORKER', 'OFFICER']);
 
 /**
  * POST /api/auth/register
  *
- * Residents are usable immediately. Workers are created PENDING and cannot
- * receive a single task until the Admin verifies them - that gate lives in
- * `requireApprovedWorker`.
+ * Residents are usable immediately. Workers and Officers are created PENDING
+ * and can do nothing until the Admin verifies them - that gate lives in
+ * `requireApprovedWorker` for workers, and in `requireApprovedOfficer` for
+ * officers.
  *
- * Officers and Admins are never self-registered; they are created by an Admin.
+ * An officer's zone choice is an application, not an appointment. Ownership
+ * (Zone.officerId) is granted by the admin on approval, so several people may
+ * apply for the same zone and the admin picks one.
+ *
+ * Admins are never self-registered.
  */
 router.post(
   '/register',
@@ -105,13 +131,28 @@ router.post(
     });
     if (existing) throw new ApiError(409, 'An account with that email or phone already exists');
 
-    if (role === 'WORKER' && !zoneCode) {
-      throw new ApiError(400, 'Workers must select the zone they will work in');
+    const needsZone = VERIFIED_ROLES.has(role);
+    if (needsZone && !zoneCode) {
+      throw new ApiError(
+        400,
+        role === 'WORKER'
+          ? 'Workers must select the zone they will work in'
+          : 'Officers must select the zone they want to run',
+      );
     }
 
-    const zone =
-      role === 'WORKER' ? await prisma.zone.findUnique({ where: { code: zoneCode } }) : null;
-    if (role === 'WORKER' && !zone) throw new ApiError(404, `Zone ${zoneCode} does not exist`);
+    const zone = needsZone ? await prisma.zone.findUnique({ where: { code: zoneCode } }) : null;
+    if (needsZone && !zone) throw new ApiError(404, `Zone ${zoneCode} does not exist`);
+
+    // Applying for a zone that already has an officer would waste the
+    // applicant's time: the admin could never approve it without first
+    // removing the incumbent. Say so now rather than after a day of waiting.
+    if (role === 'OFFICER' && zone.officerId) {
+      throw new ApiError(
+        409,
+        `${zone.name} already has an officer. Choose a zone that is still open.`,
+      );
+    }
 
     const passwordHash = await bcrypt.hash(password, 10);
 
@@ -122,9 +163,9 @@ router.post(
         phone,
         passwordHash,
         role,
-        ...(role === 'WORKER'
+        ...(needsZone
           ? {
-              workerProfile: {
+              [role === 'WORKER' ? 'workerProfile' : 'officerProfile']: {
                 create: {
                   zoneId: zone.id,
                   idProofUrl: req.file ? await putMedia(req.file) : null,
@@ -134,18 +175,23 @@ router.post(
             }
           : {}),
       },
-      include: { workerProfile: { include: { zone: true } }, zoneOwned: true },
+      include: {
+        workerProfile: { include: { zone: true } },
+        officerProfile: { include: { zone: true } },
+        zoneOwned: true,
+      },
     });
 
     // Let the admins know there is someone to verify.
-    if (role === 'WORKER') {
+    if (needsZone) {
       const admins = await prisma.user.findMany({ where: { role: 'ADMIN' }, select: { id: true } });
       if (admins.length) {
+        const what = role === 'WORKER' ? 'worker' : 'zone officer';
         await prisma.notification.createMany({
           data: admins.map((a) => ({
             userId: a.id,
-            title: 'New worker awaiting verification',
-            body: `${name} registered for ${zone.name} (${zone.label}).`,
+            title: `New ${what} awaiting verification`,
+            body: `${name} applied for ${zone.name} (${zone.label}).`,
           })),
         });
       }
@@ -157,7 +203,9 @@ router.post(
       message:
         role === 'WORKER'
           ? 'Registered. An admin must verify your account before you can receive tasks.'
-          : 'Registered successfully.',
+          : role === 'OFFICER'
+            ? `Applied to run ${zone.name}. An admin must approve you before the zone is yours.`
+            : 'Registered successfully.',
     });
   }),
 );
@@ -179,7 +227,11 @@ router.post(
     // out permanently.
     const user = await prisma.user.findFirst({
       where: { email: { equals: parsed.data.email, mode: 'insensitive' } },
-      include: { workerProfile: { include: { zone: true } }, zoneOwned: true },
+      include: {
+        workerProfile: { include: { zone: true } },
+        officerProfile: { include: { zone: true } },
+        zoneOwned: true,
+      },
     });
 
     // Same message either way, so the endpoint cannot be used to discover

@@ -93,6 +93,28 @@ class WorkerInfo {
       );
 }
 
+/// An officer's application to run a zone.
+///
+/// Present from the moment they sign up, which is how the app knows to show a
+/// "waiting for verification" screen instead of an officer dashboard with
+/// nothing in it. [AppUser.zone] stays null until an admin approves.
+class OfficerInfo {
+  final Zone? zone;
+  final String approvalStatus; // PENDING | ACTIVE | REJECTED
+  final String? rejectionNote;
+
+  const OfficerInfo({this.zone, required this.approvalStatus, this.rejectionNote});
+
+  bool get isApproved => approvalStatus == 'ACTIVE';
+  bool get isRejected => approvalStatus == 'REJECTED';
+
+  factory OfficerInfo.fromJson(Map<String, dynamic> j) => OfficerInfo(
+        zone: j['zone'] != null ? Zone.fromJson(j['zone'] as Map<String, dynamic>) : null,
+        approvalStatus: j['approvalStatus'] as String? ?? 'PENDING',
+        rejectionNote: j['rejectionNote'] as String?,
+      );
+}
+
 class AppUser {
   final String id;
   final String name;
@@ -100,7 +122,8 @@ class AppUser {
   final String? phone;
   final Role role;
   final WorkerInfo? worker;
-  final Zone? zone; // officer's zone
+  final OfficerInfo? officer;
+  final Zone? zone; // the zone an officer actually holds; null until approved
 
   const AppUser({
     required this.id,
@@ -109,8 +132,14 @@ class AppUser {
     this.phone,
     required this.role,
     this.worker,
+    this.officer,
     this.zone,
   });
+
+  /// True when this account has signed up but an admin has not cleared it yet.
+  bool get awaitingVerification =>
+      (role == Role.worker && worker != null && !worker!.isApproved) ||
+      (role == Role.officer && officer != null && !officer!.isApproved);
 
   factory AppUser.fromJson(Map<String, dynamic> j) => AppUser(
         id: j['id'] as String,
@@ -120,6 +149,9 @@ class AppUser {
         role: roleFrom(j['role'] as String?),
         worker: j['worker'] != null
             ? WorkerInfo.fromJson(j['worker'] as Map<String, dynamic>)
+            : null,
+        officer: j['officer'] != null
+            ? OfficerInfo.fromJson(j['officer'] as Map<String, dynamic>)
             : null,
         zone: j['zone'] != null ? Zone.fromJson(j['zone'] as Map<String, dynamic>) : null,
       );

@@ -19,8 +19,10 @@ router.use(authenticate, requireRole('ADMIN'));
 router.get(
   '/dashboard',
   asyncHandler(async (_req, res) => {
-    const [pendingWorkers, pendingComplaints, escalated, byStatus, zones] = await Promise.all([
+    const [pendingWorkers, pendingOfficers, pendingComplaints, escalated, byStatus, zones] =
+      await Promise.all([
       prisma.workerProfile.count({ where: { approvalStatus: 'PENDING' } }),
+      prisma.officerProfile.count({ where: { approvalStatus: 'PENDING' } }),
       prisma.complaint.count({ where: { status: 'UNDER_REVIEW' } }),
       prisma.complaint.count({ where: { status: 'ESCALATED' } }),
       prisma.complaint.groupBy({ by: ['status'], _count: { _all: true } }),
@@ -52,7 +54,7 @@ router.get(
     );
 
     res.json({
-      queues: { pendingWorkers, pendingComplaints, escalated },
+      queues: { pendingWorkers, pendingOfficers, pendingComplaints, escalated },
       statusCounts: Object.fromEntries(byStatus.map((r) => [r.status, r._count._all])),
       zones: zoneStats,
     });
@@ -152,6 +154,140 @@ router.post(
       approvalStatus: updated.approvalStatus,
       message: parsed.data.approve
         ? `${profile.user.name} is now active in ${profile.zone.name}.`
+        : `${profile.user.name} was rejected.`,
+    });
+  }),
+);
+
+// ---------------------------------------------------------------------------
+// Officer verification
+//
+// Officers self-register the same way workers do. What differs is what
+// approval grants: a zone has exactly one officer, so approving an application
+// is an appointment, and the zone must actually be free at that moment.
+// ---------------------------------------------------------------------------
+
+/** GET /api/admin/officers?status=PENDING */
+router.get(
+  '/officers',
+  asyncHandler(async (req, res) => {
+    const status = req.query.status ?? 'PENDING';
+
+    const officers = await prisma.officerProfile.findMany({
+      where: { approvalStatus: status },
+      include: {
+        user: { select: { id: true, name: true, email: true, phone: true, createdAt: true } },
+        zone: {
+          select: { id: true, code: true, name: true, label: true, officerId: true },
+        },
+      },
+      orderBy: { createdAt: 'asc' },
+    });
+
+    // Whether the zone applied for is still free decides if the admin can
+    // approve at all, so send it rather than making the app work it out.
+    res.json({
+      officers: officers.map((o) => ({
+        userId: o.userId,
+        name: o.user.name,
+        email: o.user.email,
+        phone: o.user.phone,
+        registeredAt: o.user.createdAt,
+        zone: { code: o.zone.code, name: o.zone.name, label: o.zone.label },
+        zoneIsTaken: Boolean(o.zone.officerId) && o.zone.officerId !== o.userId,
+        idProofUrl: o.idProofUrl,
+        approvalStatus: o.approvalStatus,
+      })),
+    });
+  }),
+);
+
+/**
+ * POST /api/admin/officers/:userId/verify  { approve: bool, note? }
+ *
+ * Approving appoints them: Zone.officerId is set here and nowhere else in the
+ * signup path, so an unapproved application never holds a zone hostage.
+ */
+router.post(
+  '/officers/:userId/verify',
+  asyncHandler(async (req, res) => {
+    const schema = z.object({
+      approve: z.coerce.boolean(),
+      note: z.string().max(500).optional(),
+    });
+    const parsed = schema.safeParse(req.body);
+    if (!parsed.success) throw new ApiError(400, '`approve` must be true or false');
+
+    const profile = await prisma.officerProfile.findUnique({
+      where: { userId: req.params.userId },
+      include: { user: true, zone: true },
+    });
+    if (!profile) throw new ApiError(404, 'Officer application not found');
+    if (profile.approvalStatus === 'ACTIVE' && parsed.data.approve) {
+      throw new ApiError(409, 'That officer is already verified');
+    }
+
+    // Someone else may have been appointed while this application sat in the
+    // queue. Approving anyway would silently unseat them.
+    if (parsed.data.approve && profile.zone.officerId && profile.zone.officerId !== profile.userId) {
+      const incumbent = await prisma.user.findUnique({
+        where: { id: profile.zone.officerId },
+        select: { name: true },
+      });
+      throw new ApiError(
+        409,
+        `${profile.zone.name} is already run by ${incumbent?.name ?? 'another officer'}. ` +
+          'Remove them first if you want to appoint someone else.',
+      );
+    }
+
+    const updated = await prisma.$transaction(async (tx) => {
+      const row = await tx.officerProfile.update({
+        where: { userId: req.params.userId },
+        data: {
+          approvalStatus: parsed.data.approve ? 'ACTIVE' : 'REJECTED',
+          approvedAt: parsed.data.approve ? new Date() : null,
+          rejectionNote: parsed.data.approve ? null : (parsed.data.note ?? 'Not approved'),
+        },
+      });
+
+      if (parsed.data.approve) {
+        await tx.zone.update({
+          where: { id: profile.zoneId },
+          data: { officerId: profile.userId },
+        });
+      }
+      return row;
+    });
+
+    await notify({
+      userId: profile.userId,
+      title: parsed.data.approve ? 'You have been appointed' : 'Application not approved',
+      body: parsed.data.approve
+        ? `You are now the officer for ${profile.zone.name} (${profile.zone.label}). ` +
+          'Complaints from this zone will come straight to you.'
+        : (parsed.data.note ?? 'Your officer application was not approved. Contact the campus admin.'),
+    });
+
+    // The zone's workers should know who they now answer to.
+    if (parsed.data.approve) {
+      const roster = await prisma.workerProfile.findMany({
+        where: { zoneId: profile.zoneId, approvalStatus: 'ACTIVE' },
+        select: { userId: true },
+      });
+      for (const w of roster) {
+        await notify({
+          userId: w.userId,
+          title: 'New zone officer',
+          body: `${profile.user.name} is now the officer for ${profile.zone.name}.`,
+        });
+      }
+    }
+
+    res.json({
+      approvalStatus: updated.approvalStatus,
+      message: parsed.data.approve
+        ? `${profile.user.name} now runs ${profile.zone.name}.`
         : `${profile.user.name} was rejected.`,
     });
   }),

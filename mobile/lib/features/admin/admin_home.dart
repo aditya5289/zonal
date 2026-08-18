@@ -12,7 +12,7 @@ import 'campus_map_screen.dart';
 import 'escalations_screen.dart';
 import 'insights_screen.dart';
 import 'verify_complaints_screen.dart';
-import 'verify_workers_screen.dart';
+import 'verify_people_screen.dart';
 import 'zones_screen.dart';
 
 class AdminHome extends StatefulWidget {
@@ -76,6 +76,7 @@ class _AdminHomeState extends State<AdminHome> {
                 .toList();
 
             final pendingWorkers = queues['pendingWorkers'] as int? ?? 0;
+            final pendingOfficers = queues['pendingOfficers'] as int? ?? 0;
             final pendingComplaints = queues['pendingComplaints'] as int? ?? 0;
             final escalated = queues['escalated'] as int? ?? 0;
 
@@ -86,7 +87,10 @@ class _AdminHomeState extends State<AdminHome> {
                 children: [
                   // The two verification gates come first - they are the only
                   // things that block the rest of the system from moving.
-                  if (pendingComplaints > 0 || pendingWorkers > 0 || escalated > 0)
+                  if (pendingComplaints > 0 ||
+                      pendingWorkers > 0 ||
+                      pendingOfficers > 0 ||
+                      escalated > 0)
                     Padding(
                       padding: const EdgeInsets.fromLTRB(12, 14, 12, 0),
                       child: Column(
@@ -107,7 +111,17 @@ class _AdminHomeState extends State<AdminHome> {
                               count: pendingWorkers,
                               title: 'worker${pendingWorkers == 1 ? '' : 's'} to verify',
                               subtitle: 'They cannot be given work until verified',
-                              onTap: () => _go(const VerifyWorkersScreen()),
+                              onTap: () => _go(const VerifyPeopleScreen()),
+                            ),
+                          if (pendingOfficers > 0)
+                            _QueueTile(
+                              icon: Icons.shield_outlined,
+                              color: const Color(0xFF7A52CC),
+                              count: pendingOfficers,
+                              title: 'officer${pendingOfficers == 1 ? '' : 's'} to approve',
+                              subtitle: 'A zone has no one routing its complaints '
+                                  'until you appoint someone',
+                              onTap: () => _go(const VerifyPeopleScreen(officers: true)),
                             ),
                           if (escalated > 0)
                             _QueueTile(
@@ -211,7 +225,13 @@ class _AdminHomeState extends State<AdminHome> {
                           icon: Icons.badge_outlined,
                           title: 'All workers',
                           subtitle: 'Verified, pending and rejected',
-                          onTap: () => _go(const VerifyWorkersScreen()),
+                          onTap: () => _go(const VerifyPeopleScreen()),
+                        ),
+                        _NavTile(
+                          icon: Icons.shield_outlined,
+                          title: 'Zone officers',
+                          subtitle: 'Applications, and who runs which zone',
+                          onTap: () => _go(const VerifyPeopleScreen(officers: true)),
                         ),
                       ],
                     ),

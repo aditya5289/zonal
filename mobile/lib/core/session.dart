@@ -68,7 +68,11 @@ class Session extends ChangeNotifier {
       'name': name,
       'email': email,
       'password': password,
-      'role': role == Role.worker ? 'WORKER' : 'RESIDENT',
+      'role': switch (role) {
+        Role.worker => 'WORKER',
+        Role.officer => 'OFFICER',
+        _ => 'RESIDENT',
+      },
       if (phone != null && phone.isNotEmpty) 'phone': phone,
       if (zoneCode != null) 'zoneCode': '$zoneCode',
     };
