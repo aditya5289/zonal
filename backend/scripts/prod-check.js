@@ -103,6 +103,30 @@ check(
   login.status === 401 ? 'rejects bad credentials' : `HTTP ${login.status}`,
 );
 
+// Officer onboarding: the endpoints must exist and must be admin-only.
+const officerQueue = await api('/admin/officers');
+check(
+  'officer approval queue is mounted and protected',
+  officerQueue.status === 401,
+  `HTTP ${officerQueue.status}`,
+);
+
+const badOfficer = await api('/auth/register', {
+  method: 'POST',
+  headers: { 'Content-Type': 'application/json' },
+  body: JSON.stringify({
+    name: 'No Zone',
+    email: `probe.${Date.now()}@example.com`,
+    password: 'password123',
+    role: 'OFFICER',
+  }),
+});
+check(
+  'officer signup requires a zone',
+  badOfficer.status === 400 && /zone/i.test(badOfficer.body.error ?? ''),
+  badOfficer.body.error ?? `HTTP ${badOfficer.status}`,
+);
+
 const landmarks = await api('/landmarks');
 const seeded = landmarks.status === 401; // needs auth, so it exists
 check('landmark endpoint mounted', seeded || landmarks.ok);
